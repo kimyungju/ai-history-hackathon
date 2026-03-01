@@ -6,7 +6,10 @@ from typing import Any
 
 from google.cloud import aiplatform
 from google.cloud.aiplatform.matching_engine import MatchingEngineIndexEndpoint
-from google.cloud.aiplatform.matching_engine.matching_engine_index_endpoint import Namespace
+from google.cloud.aiplatform.matching_engine.matching_engine_index_endpoint import (
+    Namespace,
+)
+from google.cloud.aiplatform_v1.types import index as gca_index
 
 from app.config.settings import settings
 from app.models.schemas import Chunk
@@ -20,6 +23,7 @@ class VectorSearchService:
     def __init__(self) -> None:
         self._initialized = False
         self._endpoint: MatchingEngineIndexEndpoint | None = None
+        self._idx: aiplatform.MatchingEngineIndex | None = None
 
     def _ensure_init(self) -> None:
         if not self._initialized:
@@ -30,7 +34,7 @@ class VectorSearchService:
             self._initialized = True
 
     # ------------------------------------------------------------------
-    # Lazy-loaded endpoint
+    # Lazy-loaded endpoint and index
     # ------------------------------------------------------------------
 
     @property
@@ -42,6 +46,23 @@ class VectorSearchService:
                 index_endpoint_name=settings.VECTOR_SEARCH_ENDPOINT,
             )
         return self._endpoint
+
+    @property
+    def index(self) -> aiplatform.MatchingEngineIndex:
+        """Return a lazily-initialized MatchingEngineIndex pinned to the correct region.
+
+        Uses the full resource name so it is immune to global vertexai.init()
+        region changes caused by other services (e.g. entity extraction).
+        """
+        if self._idx is None:
+            self._ensure_init()
+            full_name = (
+                f"projects/{settings.GCP_PROJECT_ID}"
+                f"/locations/{settings.GCP_REGION}"
+                f"/indexes/{settings.VECTOR_SEARCH_INDEX_ID}"
+            )
+            self._idx = aiplatform.MatchingEngineIndex(index_name=full_name)
+        return self._idx
 
     # ------------------------------------------------------------------
     # Upsert
@@ -67,9 +88,13 @@ class VectorSearchService:
 
         datapoints: list[dict[str, Any]] = []
         for chunk, embedding in zip(chunks, embeddings):
+            # Use a single Restriction with all categories in allow_list.
+            # Vector Search does not allow the same namespace to appear
+            # more than once in restricts.
             restricts = [
-                Namespace(name="category", allow_tokens=[cat])
-                for cat in chunk.categories
+                gca_index.IndexDatapoint.Restriction(
+                    namespace="category", allow_list=list(chunk.categories)
+                )
             ]
             datapoints.append(
                 {
@@ -79,6 +104,10 @@ class VectorSearchService:
                 }
             )
 
+        # Cache the index reference to avoid re-creating per batch and to
+        # ensure we always target the correct region even when other services
+        # (e.g. entity extraction) call vertexai.init with a different region.
+        idx = self.index
         loop = asyncio.get_event_loop()
         upserted = 0
         batch_size = 100
@@ -93,9 +122,7 @@ class VectorSearchService:
             )
             await loop.run_in_executor(
                 None,
-                lambda b=batch: aiplatform.MatchingEngineIndex(
-                    index_name=settings.VECTOR_SEARCH_INDEX_ID,
-                ).upsert_datapoints(datapoints=b),
+                lambda b=batch: idx.upsert_datapoints(datapoints=b),
             )
             upserted += len(batch)
 
