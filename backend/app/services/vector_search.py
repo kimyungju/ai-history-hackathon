@@ -37,13 +37,27 @@ class VectorSearchService:
     # Lazy-loaded endpoint and index
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _parse_endpoint_name(raw: str) -> str:
+        """Normalise endpoint config to a value the SDK accepts.
+
+        Accepts:
+          - Numeric endpoint ID (pass-through)
+          - Full resource name (pass-through)
+          - Public domain name → extract numeric prefix
+        """
+        if raw.endswith(".vdb.vertexai.goog"):
+            return raw.split(".")[0]
+        return raw
+
     @property
     def endpoint(self) -> MatchingEngineIndexEndpoint:
         """Return the MatchingEngineIndexEndpoint, creating it on first access."""
         if self._endpoint is None:
             self._ensure_init()
+            endpoint_name = self._parse_endpoint_name(settings.VECTOR_SEARCH_ENDPOINT)
             self._endpoint = MatchingEngineIndexEndpoint(
-                index_endpoint_name=settings.VECTOR_SEARCH_ENDPOINT,
+                index_endpoint_name=endpoint_name,
             )
         return self._endpoint
 

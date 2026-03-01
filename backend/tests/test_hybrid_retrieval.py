@@ -145,3 +145,29 @@ class TestGraphSearchParallel:
             # Both hints searched
             assert mock_neo4j.search_entities.call_count == 2
             assert mock_neo4j.get_subgraph.call_count == 2
+
+
+class TestExtractEntityHints:
+    """Verify entity hint extraction handles various casing."""
+
+    def test_lowercase_query_extracts_hints(self, service):
+        """Lowercase queries should still produce entity hints."""
+        hints = service._extract_entity_hints("explain strait settlement")
+        assert len(hints) > 0
+        combined = " ".join(hints).lower()
+        assert "strait" in combined
+
+    def test_mixed_case_query(self, service):
+        """Mixed case queries should extract entities."""
+        hints = service._extract_entity_hints("tell me about the straits Settlements")
+        assert len(hints) > 0
+
+    def test_stop_words_excluded(self, service):
+        """Common stop words should not appear as hints."""
+        hints = service._extract_entity_hints("What is the colonial office?")
+        assert "What" not in hints
+
+    def test_already_capitalized(self, service):
+        """Capitalized queries should still work as before."""
+        hints = service._extract_entity_hints("Who is J. Anderson?")
+        assert any("Anderson" in h for h in hints)

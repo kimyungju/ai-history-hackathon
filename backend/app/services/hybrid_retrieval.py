@@ -77,7 +77,9 @@ class HybridRetrievalService:
                 return await self._graph_search(entity_hints, filter_categories)
 
         vector_results, graph_result = await asyncio.gather(
-            _timed_vector(), _timed_graph(), return_exceptions=True
+            asyncio.wait_for(_timed_vector(), timeout=30),
+            asyncio.wait_for(_timed_graph(), timeout=15),
+            return_exceptions=True,
         )
 
         # Handle exceptions from parallel tasks
@@ -210,30 +212,53 @@ class HybridRetrievalService:
     def _extract_entity_hints(question: str) -> list[str]:
         """Extract likely entity names from the question.
 
-        Uses simple heuristics — capitalized multi-word phrases and proper
-        nouns.  No LLM call to keep latency low.
+        Uses simple heuristics — capitalized multi-word phrases, proper
+        nouns, and title-cased versions of multi-word sequences.
+        No LLM call to keep latency low.
         """
+        stop_words = {
+            "what", "who", "where", "when", "how", "why", "which",
+            "does", "did", "was", "were", "are", "is", "the", "and",
+            "for", "with", "from", "about", "into", "that", "this",
+            "have", "has", "had", "can", "could", "would", "should",
+            "tell", "describe", "explain", "me", "please",
+            "a", "an", "of", "in", "on", "to", "by",
+        }
+
         # Find sequences of capitalized words (2+ words = likely entity)
-        # e.g. "J. Anderson", "Colonial Trade Commission"
         pattern = r"\b(?:[A-Z][a-z.]+(?:\s+[A-Z][a-z.]+)+)\b"
+
+        # Try on original text first
         multi_word = re.findall(pattern, question)
 
-        # Also grab single capitalized words that aren't common stop words
-        stop_words = {
-            "What", "Who", "Where", "When", "How", "Why", "Which",
-            "Does", "Did", "Was", "Were", "Are", "Is", "The", "And",
-            "For", "With", "From", "About", "Into", "That", "This",
-            "Have", "Has", "Had", "Can", "Could", "Would", "Should",
-            "Tell", "Describe", "Explain",
-        }
-        single_caps = re.findall(r"\b([A-Z][a-z]{2,})\b", question)
-        single_caps = [w for w in single_caps if w not in stop_words]
+        # Also try on title-cased text to catch lowercase queries
+        title_q = question.title()
+        title_multi = re.findall(pattern, title_q)
 
-        # Combine and deduplicate, preferring multi-word matches
-        hints: list[str] = list(multi_word)
-        for word in single_caps:
-            # Skip if already part of a multi-word match
-            if not any(word in mw for mw in multi_word):
+        # Merge, filtering out stop-word-only matches
+        all_multi: list[str] = []
+        for phrase in multi_word + title_multi:
+            words = phrase.split()
+            non_stop = [w for w in words if w.lower() not in stop_words]
+            if non_stop:
+                cleaned = " ".join(non_stop)
+                if cleaned not in all_multi:
+                    all_multi.append(cleaned)
+
+        # Single capitalized words from original
+        single_caps = re.findall(r"\b([A-Z][a-z]{2,})\b", question)
+        single_caps = [w for w in single_caps if w.lower() not in stop_words]
+
+        # Also from title-cased version
+        title_singles = re.findall(r"\b([A-Z][a-z]{2,})\b", title_q)
+        title_singles = [w for w in title_singles if w.lower() not in stop_words]
+
+        all_singles = list(dict.fromkeys(single_caps + title_singles))
+
+        # Combine: multi-word first, then singles not already covered
+        hints: list[str] = list(all_multi)
+        for word in all_singles:
+            if not any(word.lower() in mw.lower() for mw in all_multi):
                 hints.append(word)
 
         return hints
