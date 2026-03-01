@@ -29,7 +29,7 @@ export default function ChatPanel() {
   };
 
   return (
-    <div className="flex flex-col h-full bg-stone-950">
+    <div className="flex flex-col h-full bg-stone-950 overflow-hidden">
       {/* Message area */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 min-h-0">
         {messages.length === 0 && (
