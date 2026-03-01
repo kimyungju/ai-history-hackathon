@@ -86,6 +86,7 @@ export interface ChatMessage {
   content: string;
   citations?: Citation[];
   graph?: GraphPayload | null;
+  source_type?: "archive" | "web_fallback" | "mixed";
 }
 
 // --- Constants ---

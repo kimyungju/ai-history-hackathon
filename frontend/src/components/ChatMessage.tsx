@@ -23,6 +23,13 @@ export default function ChatMessage({ message }: Props) {
   // Assistant message — parse citation markers
   const segments = parseCitations(message.content, message.citations ?? []);
 
+  const sourceLabel =
+    message.source_type === "mixed"
+      ? "Archive + Web"
+      : message.source_type === "web_fallback"
+        ? "Web sources"
+        : null;
+
   return (
     <div className="flex justify-start mb-3">
       <div className="bg-gray-800 rounded-2xl rounded-bl-sm px-4 py-2 max-w-[85%]">
@@ -35,6 +42,11 @@ export default function ChatMessage({ message }: Props) {
             )
           )}
         </div>
+        {sourceLabel && (
+          <div className="mt-2 pt-2 border-t border-gray-700">
+            <span className="text-xs text-gray-500">Sources: {sourceLabel}</span>
+          </div>
+        )}
       </div>
     </div>
   );

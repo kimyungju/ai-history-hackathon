@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     ENTITY_SIMILARITY_THRESHOLD: float = 0.85
     ENTITY_CONFIDENCE_MIN: float = 0.5
 
+    # Auto-classification (Phase 4)
+    CLASSIFICATION_CONFIDENCE_MIN: float = 0.8
+
     # Signed URL
     SIGNED_URL_EXPIRY_MINUTES: int = 15
 

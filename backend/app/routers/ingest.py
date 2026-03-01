@@ -22,6 +22,7 @@ from app.services.entity_normalization import normalization_service
 from app.services.neo4j_service import neo4j_service
 from app.services.ocr import ocr_service
 from app.services.storage import storage_service
+from app.services.auto_classification import auto_classification_service
 from app.services.vector_search import vector_search_service
 
 logger = logging.getLogger(__name__)

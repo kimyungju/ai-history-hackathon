@@ -68,6 +68,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         content: response.answer,
         citations: response.citations,
         graph: response.graph,
+        source_type: response.source_type,
       };
 
       set({
