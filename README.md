@@ -15,11 +15,11 @@ This project addresses all three objectives of the CO 273 Pipeline challenge, pl
 
 ### Objective 1: High-Fidelity OCR & Correction
 
-We use **Google Cloud Document AI** with a multilingual handwritten processor to produce accurate text from colonial-era scanned PDFs — far surpassing the legacy Gale OCR.
+We use **Google Cloud Document AI** to produce accurate text from colonial-era scanned PDFs — far surpassing the legacy Gale OCR.
 
 | Capability | Implementation |
 |---|---|
-| **OCR engine** | Document AI handwritten processor (English + Chinese) |
+| **OCR engine** | Google Cloud Document AI |
 | **Batch processing** | 15-page batches with semaphore concurrency (5 parallel requests) |
 | **Text cleaning** | Sliding-window chunking (450 tokens, 100 overlap), CJK language detection |
 | **Quality monitoring** | Per-page confidence scores; pages below 0.5 flagged for review |
