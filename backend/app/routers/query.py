@@ -1,6 +1,7 @@
 """Query router -- Q&A, document signed-URL, and PDF proxy endpoints."""
 
 import asyncio
+import json
 import logging
 from urllib.parse import quote
 
@@ -56,6 +57,40 @@ async def document_signed_url(
     proxy_url = f"/document/proxy/{encoded_doc_id}"
     logger.info("Using proxy URL fallback for doc_id=%s", doc_id)
     return SignedUrlResponse(url=proxy_url, expires_in=3600)
+
+
+@router.get("/document/{doc_id:path}/pages/{page}/text")
+async def document_page_text(doc_id: str, page: int) -> dict:
+    """Return raw OCR text for a specific page of a document.
+
+    Reads the OCR JSON from GCS (``ocr/{doc_id}_ocr.json``) and returns
+    the text and confidence for the requested page number.
+    """
+    blob_path = f"ocr/{doc_id}_ocr.json"
+    try:
+        blob = storage_service._bucket.blob(blob_path)
+        loop = asyncio.get_event_loop()
+        raw = await loop.run_in_executor(None, blob.download_as_text)
+        pages = json.loads(raw)
+    except Exception:
+        logger.warning("OCR data not found for %s", doc_id)
+        raise HTTPException(status_code=404, detail=f"OCR data not found for '{doc_id}'")
+
+    # Find the requested page (1-indexed)
+    for p in pages:
+        if p["page_number"] == page:
+            return {
+                "doc_id": doc_id,
+                "page": page,
+                "text": p["text"],
+                "confidence": p.get("confidence", 0.0),
+                "total_pages": len(pages),
+            }
+
+    raise HTTPException(
+        status_code=404,
+        detail=f"Page {page} not found in '{doc_id}' (total pages: {len(pages)})",
+    )
 
 
 @router.get("/document/proxy/{doc_id:path}")
