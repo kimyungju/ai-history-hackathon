@@ -147,6 +147,116 @@ class TestGraphSearchParallel:
             assert mock_neo4j.get_subgraph.call_count == 2
 
 
+    @pytest.mark.asyncio
+    async def test_uses_multiple_seeds_per_hint(self, service):
+        """Each hint should use up to 3 search results as seeds."""
+        node_a1 = GraphNode(
+            canonical_id="entity_a1", name="A1",
+            main_categories=[], highlighted=True,
+        )
+        node_a2 = GraphNode(
+            canonical_id="entity_a2", name="A2",
+            main_categories=[], highlighted=False,
+        )
+        node_a3 = GraphNode(
+            canonical_id="entity_a3", name="A3",
+            main_categories=[], highlighted=False,
+        )
+
+        subgraph_a1 = GraphPayload(nodes=[node_a1], edges=[], center_node="entity_a1")
+        subgraph_a2 = GraphPayload(nodes=[node_a2], edges=[], center_node="entity_a2")
+        subgraph_a3 = GraphPayload(nodes=[node_a3], edges=[], center_node="entity_a3")
+
+        async def fake_search(hint, limit=5, categories=None):
+            return [node_a1, node_a2, node_a3]
+
+        async def fake_subgraph(cid, categories=None):
+            mapping = {
+                "entity_a1": subgraph_a1,
+                "entity_a2": subgraph_a2,
+                "entity_a3": subgraph_a3,
+            }
+            return mapping.get(cid)
+
+        with patch("app.services.hybrid_retrieval.neo4j_service") as mock_neo4j:
+            mock_neo4j.search_entities.side_effect = fake_search
+            mock_neo4j.get_subgraph.side_effect = fake_subgraph
+
+            result = await service._graph_search(["Alice"], None)
+
+            assert result["payload"] is not None
+            assert len(result["payload"].nodes) == 3
+            assert mock_neo4j.search_entities.call_count == 1
+            assert mock_neo4j.get_subgraph.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_deduplicates_seeds_across_hints(self, service):
+        """Same entity matched by different hints should only produce one subgraph fetch."""
+        node_shared = GraphNode(
+            canonical_id="entity_shared", name="Shared Entity",
+            main_categories=[], highlighted=True,
+        )
+        node_unique = GraphNode(
+            canonical_id="entity_unique", name="Unique Entity",
+            main_categories=[], highlighted=False,
+        )
+
+        subgraph_shared = GraphPayload(nodes=[node_shared], edges=[], center_node="entity_shared")
+        subgraph_unique = GraphPayload(nodes=[node_unique], edges=[], center_node="entity_unique")
+
+        async def fake_search(hint, limit=5, categories=None):
+            if hint == "Hint1":
+                return [node_shared, node_unique]
+            elif hint == "Hint2":
+                return [node_shared]
+            return []
+
+        async def fake_subgraph(cid, categories=None):
+            return {"entity_shared": subgraph_shared, "entity_unique": subgraph_unique}.get(cid)
+
+        with patch("app.services.hybrid_retrieval.neo4j_service") as mock_neo4j:
+            mock_neo4j.search_entities.side_effect = fake_search
+            mock_neo4j.get_subgraph.side_effect = fake_subgraph
+
+            result = await service._graph_search(["Hint1", "Hint2"], None)
+
+            assert result["payload"] is not None
+            assert len(result["payload"].nodes) == 2
+            assert mock_neo4j.search_entities.call_count == 2
+            assert mock_neo4j.get_subgraph.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_caps_seeds_at_max(self, service):
+        """Total seeds should be capped to avoid excessive Neo4j queries."""
+        nodes = [
+            GraphNode(canonical_id=f"entity_{i}", name=f"Entity {i}",
+                      main_categories=[], highlighted=False)
+            for i in range(15)
+        ]
+
+        async def fake_search(hint, limit=5, categories=None):
+            idx = int(hint.replace("Hint", ""))
+            base = idx * 3
+            return nodes[base:base + 3] if base + 3 <= len(nodes) else []
+
+        async def fake_subgraph(cid, categories=None):
+            matching = [n for n in nodes if n.canonical_id == cid]
+            if matching:
+                return GraphPayload(nodes=[matching[0]], edges=[], center_node=cid)
+            return None
+
+        with patch("app.services.hybrid_retrieval.neo4j_service") as mock_neo4j:
+            mock_neo4j.search_entities.side_effect = fake_search
+            mock_neo4j.get_subgraph.side_effect = fake_subgraph
+
+            # 5 hints x 3 seeds each = 15 potential seeds, but cap at 8
+            result = await service._graph_search(
+                ["Hint0", "Hint1", "Hint2", "Hint3", "Hint4"], None
+            )
+
+            assert mock_neo4j.get_subgraph.call_count <= 8
+
+
 class TestExtractEntityHints:
     """Verify entity hint extraction handles various casing."""
 

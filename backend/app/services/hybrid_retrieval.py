@@ -453,13 +453,24 @@ class HybridRetrievalService:
             for hint in entity_hints
         ], return_exceptions=True)
 
-        # Collect seeds for subgraph fetches
+        # Collect seeds for subgraph fetches — use top 3 per hint, dedup, cap total
+        MAX_SEEDS_PER_HINT = 3
+        MAX_GRAPH_SEEDS = 8
+
         seeds: list[GraphNode] = []
+        seen_seed_ids: set[str] = set()
         for hint, result in zip(entity_hints, search_results):
             if isinstance(result, BaseException) or not result:
                 logger.debug("No Neo4j match for hint '%s'", hint)
                 continue
-            seeds.append(result[0])
+            for node in result[:MAX_SEEDS_PER_HINT]:
+                if node.canonical_id not in seen_seed_ids:
+                    seen_seed_ids.add(node.canonical_id)
+                    seeds.append(node)
+
+        # Cap total seeds to limit Neo4j query volume
+        if len(seeds) > MAX_GRAPH_SEEDS:
+            seeds = seeds[:MAX_GRAPH_SEEDS]
 
         logger.info("Graph search: %d seeds from %d hints", len(seeds), len(entity_hints))
 

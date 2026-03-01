@@ -93,6 +93,14 @@ export default function GraphCanvas() {
   // ---- Determine which data to display ----
   const activeData = useMemo(() => {
     if (!isOverviewMode && graphData) {
+      // Build a lookup for real connection_count from overview data
+      const ccLookup = new Map<string, number>();
+      if (overviewData) {
+        for (const n of overviewData.nodes) {
+          ccLookup.set(n.canonical_id, n.connection_count);
+        }
+      }
+
       // Query mode — convert GraphPayload nodes to OverviewNode shape
       return {
         nodes: graphData.nodes.map((n) => ({
@@ -100,7 +108,7 @@ export default function GraphCanvas() {
           name: n.name,
           main_categories: n.main_categories,
           sub_category: n.sub_category,
-          connection_count: 1, // no connection_count in query data
+          connection_count: ccLookup.get(n.canonical_id) ?? 1,
           evidence_doc_id: n.evidence_doc_id ?? null,
           evidence_page: n.evidence_page ?? null,
         })),
@@ -111,9 +119,10 @@ export default function GraphCanvas() {
   }, [isOverviewMode, graphData, overviewData]);
 
   // ---- Compute label threshold ----
+  const isLargeNodeSet = (activeData?.nodes.length ?? 0) > 50;
   const threshold = useMemo(
-    () => (activeData ? labelThreshold(activeData.nodes, isOverviewMode) : 0),
-    [activeData, isOverviewMode],
+    () => (activeData ? labelThreshold(activeData.nodes, isOverviewMode || isLargeNodeSet) : 0),
+    [activeData, isOverviewMode, isLargeNodeSet],
   );
 
   // ---- Build Cytoscape elements ----
@@ -135,7 +144,7 @@ export default function GraphCanvas() {
           main_categories: n.main_categories[0] ?? "",
           sub_category: n.sub_category ?? "",
           connection_count: n.connection_count,
-          size: nodeSize(n.connection_count, isOverviewMode),
+          size: nodeSize(n.connection_count, isOverviewMode || isLargeNodeSet),
           evidence_doc_id: n.evidence_doc_id ?? null,
           evidence_page: n.evidence_page ?? null,
         },
@@ -171,7 +180,8 @@ export default function GraphCanvas() {
     }
 
     // ---- Mode-aware layout parameters ----
-    const layoutOptions = isOverviewMode
+    const useOverviewLayout = isOverviewMode || elements.length > 50;
+    const layoutOptions = useOverviewLayout
       ? {
           name: "fcose",
           quality: "proof" as const,
@@ -223,9 +233,9 @@ export default function GraphCanvas() {
         };
 
     // ---- Edge style based on mode ----
-    const edgeWidth = isOverviewMode ? 0.5 : 1.5;
-    const edgeOpacity = isOverviewMode ? 0.15 : 0.4;
-    const edgeArrowScale = isOverviewMode ? 0.3 : 0.5;
+    const edgeWidth = useOverviewLayout ? 0.5 : 1.5;
+    const edgeOpacity = useOverviewLayout ? 0.15 : 0.4;
+    const edgeArrowScale = useOverviewLayout ? 0.3 : 0.5;
 
     const cy = cytoscape({
       container: containerRef.current,
@@ -303,7 +313,7 @@ export default function GraphCanvas() {
     // ---- Zoom-to-fit after layout completes ----
     cy.one("layoutstop", () => {
       cy.animate({
-        fit: { eles: cy.elements(), padding: isOverviewMode ? 60 : 30 },
+        fit: { eles: cy.elements(), padding: useOverviewLayout ? 60 : 30 },
         duration: 400,
         easing: "ease-in-out-cubic",
       });
