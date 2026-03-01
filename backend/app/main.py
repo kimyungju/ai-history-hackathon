@@ -10,6 +10,7 @@ from app.config.logging_config import setup_logging
 from app.config.settings import settings
 from app.middleware.trace import TraceMiddleware
 from app.routers import ingest, query, graph
+from app.routers.admin import router as admin_router
 from app.services.neo4j_service import neo4j_service
 
 logger = logging.getLogger(__name__)
@@ -53,6 +54,7 @@ app.add_middleware(TraceMiddleware)
 app.include_router(ingest.router)
 app.include_router(query.router)
 app.include_router(graph.router)
+app.include_router(admin_router)
 
 
 @app.get("/health")
