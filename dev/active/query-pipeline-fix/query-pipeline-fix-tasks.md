@@ -71,7 +71,7 @@
   - Acceptance: Returns substantive answer with citations (no regression)
   - Effort: S | Depends: C1
 
-- [ ] **C3: Test from frontend UI**
+- [x] **C3: Test from frontend UI**
   - Open frontend (`npm run dev`), type "explain strait settlement"
   - Acceptance: Response displays in chat with source citations visible
   - Effort: S | Depends: C1

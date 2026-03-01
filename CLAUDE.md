@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Colonial Archives Graph-RAG: an AI-powered research tool for querying colonial-era handwritten archive documents (English + Chinese) via a chatbot backed by a knowledge graph. Every answer must trace back to specific document pages — zero tolerance for hallucination.
 
-**Current state**: Phases 1–4 code complete, Phase 5 mostly complete (5.1–5.3, 5.5–5.7 done). Backend **tested end-to-end with real data** — full 9-step ingestion pipeline works (OCR → chunk → embed → vector upsert → entity extraction → normalization → Neo4j MERGE). Query endpoint works (parallel vector search + graph traversal + Gemini answer generation + Tavily web fallback). Frontend code complete with mobile responsive layout and refined archival design theme (Crimson Pro + Plus Jakarta Sans + IBM Plex Mono typography, warm stone/ink palette, animations). 53 tests (24 backend + 29 frontend). Only remaining: T11 GCP infra provisioning, 3.8 integration testing, 5.4 batch ingestion (deferred).
+**Current state**: Phases 1–4 code complete, Phase 5 mostly complete (5.1–5.3, 5.5–5.7 done). Backend **tested end-to-end with real data** — full 9-step ingestion pipeline works (OCR → chunk → embed → vector upsert → entity extraction → normalization → Neo4j MERGE). Query endpoint works with **archive-first approach**: parallel vector search + graph traversal → LLM generates from archive context only → web fallback with disclaimer only when archive can't answer. Frontend code complete with mobile responsive layout and refined archival design theme (Crimson Pro + Plus Jakarta Sans + IBM Plex Mono typography, warm stone/ink palette, animations). 63 tests (34 backend + 29 frontend). Only remaining: T11 GCP infra provisioning, 3.8 integration testing, 5.4 batch ingestion (deferred).
 
 ## Commands
 
@@ -25,7 +25,7 @@ cd infra && docker-compose up --build
 
 # Backend tests (use Python 3.13, not 3.14 which lacks vertexai)
 cd backend && "C:/Users/yjkim/AppData/Local/Programs/Python/Python313/python.exe" -m pytest tests/ -v
-# 24 tests: 6 formatter + 3 trace + 2 log_stage + 1 health + 3 hybrid_retrieval + 2 admin + 3 web_search + 4 phase4
+# 34 tests: 6 formatter + 3 trace + 2 log_stage + 1 health + 10 hybrid_retrieval + 2 admin + 3 web_search + 4 phase4 + 3 vector_config
 
 # Frontend tests
 cd frontend && npx vitest run
@@ -56,20 +56,20 @@ gcloud config set project aihistory-488807
   - `ocr.py` — Document AI OCR with page batching (15/batch) and semaphore concurrency (5)
   - `chunking.py` — Text cleaning + sliding window (450 tokens, 100 overlap), page-span tracking, CJK language detection
   - `embeddings.py` — Vertex AI text-embedding-004, batch size 250
-  - `vector_search.py` — Vertex AI Vector Search upsert (batch 100) and nearest-neighbor search
-  - `llm.py` — Gemini 2.0 Flash with grounded citation prompt, temperature 0.1
+  - `vector_search.py` — Vertex AI Vector Search upsert (batch 100) and nearest-neighbor search; resilient `_parse_endpoint_name()` handles domain/ID/resource-name formats
+  - `llm.py` — Gemini 2.0 Flash with archive-focused prompt + separate `WEB_FALLBACK_PROMPT`; `generate_answer()` accepts optional `prompt_template` parameter; temperature 0.1
   - `entity_extraction.py` — Gemini structured JSON output for entities + relationships per chunk
   - `entity_normalization.py` — Three-stage dedup (exact match, embedding similarity, fuzzy string via rapidfuzz)
   - `neo4j_service.py` — Async Neo4j driver, MERGE entities/relationships, subgraph traversal, entity search
-  - `hybrid_retrieval.py` — Orchestrates parallel vector search + graph traversal, combined scoring, GraphPayload in response
-  - `web_search.py` — Tavily web search fallback when archive relevance < 0.7
+  - `hybrid_retrieval.py` — Orchestrates archive-first query: parallel vector search + graph traversal → LLM with archive-only context → web fallback with disclaimer if archive can't answer. Scoring uses `1 - cosine_distance` for similarity.
+  - `web_search.py` — Tavily web search fallback, only triggered when archive LLM returns fallback answer
   - `auto_classification.py` — Gemini-based document category classification for unmapped PDFs
 
 ### Data Flow
 
 **Ingestion** (9 steps): PDF (GCS) → Document AI OCR → clean+chunk → embed → vector upsert → entity extraction (Gemini) → entity normalization → Neo4j MERGE. Steps 7-9 (graph) are non-blocking — vector ingestion succeeds even if graph fails.
 
-**Query**: Question → embed + extract entity hints → parallel (vector search + graph traversal) → merge + score (vector*0.6 + graph*0.4) → Gemini generates grounded answer with `[archive:N]` citations → response includes GraphPayload.
+**Query** (archive-first): Question → embed + extract entity hints (case-insensitive) → parallel (vector search + graph traversal) → merge archive context → score (`(1-distance)*0.6 + graph_ratio*0.4`) → Gemini generates answer from archive-only context with `[archive:N]` citations → if archive can't answer → web search → Gemini with web context + disclaimer prefix → response includes GraphPayload.
 
 ### Key Design Decisions
 
@@ -90,6 +90,8 @@ gcloud config set project aihistory-488807
 - `docs/plans/` — Design documents, implementation plans for each phase
 - `docs/plans/2026-03-01-phase5-remaining-tasks.md` — Phase 5 execution plan (5.2, 5.3, 5.5, 5.6)
 - `docs/plans/2026-03-01-frontend-design-refinement.md` — Frontend design refinement plan
+- `docs/plans/2026-03-01-query-pipeline-fix.md` — Vector search config + entity hints fix
+- `docs/plans/2026-03-01-archive-first-query.md` — Archive-first query with web fallback disclaimer
 
 ## API Endpoints
 
