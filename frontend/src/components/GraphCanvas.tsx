@@ -167,19 +167,37 @@ export default function GraphCanvas() {
     }
   }, [graphData]);
 
+  const hasMessages = useAppStore((s) => s.messages.length > 0);
+
   if (!graphData) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-center max-w-xs animate-fade-in">
-          <div className="flex justify-center gap-3 text-stone-700 text-lg mb-3 select-none">
-            <span>&#9671;</span><span>&#9671;</span><span>&#9671;</span>
-          </div>
-          <h3 className="font-display text-base font-medium text-stone-400">
-            Knowledge Graph
-          </h3>
-          <p className="text-stone-600 text-sm mt-1.5">
-            Ask a question or search for an entity to explore the document network.
-          </p>
+          {hasMessages ? (
+            <>
+              <div className="flex justify-center gap-3 text-stone-700 text-lg mb-3 select-none">
+                <span>&#9675;</span>
+              </div>
+              <h3 className="font-display text-base font-medium text-stone-400">
+                No Entities Found
+              </h3>
+              <p className="text-stone-600 text-sm mt-1.5">
+                No graph entities were found for this query. Try searching for specific names, places, or organizations.
+              </p>
+            </>
+          ) : (
+            <>
+              <div className="flex justify-center gap-3 text-stone-700 text-lg mb-3 select-none">
+                <span>&#9671;</span><span>&#9671;</span><span>&#9671;</span>
+              </div>
+              <h3 className="font-display text-base font-medium text-stone-400">
+                Knowledge Graph
+              </h3>
+              <p className="text-stone-600 text-sm mt-1.5">
+                Ask a question or search for an entity to explore the document network.
+              </p>
+            </>
+          )}
         </div>
       </div>
     );

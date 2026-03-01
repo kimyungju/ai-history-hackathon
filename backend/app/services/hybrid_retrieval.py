@@ -13,7 +13,6 @@ import re
 from collections import defaultdict
 
 from app.config.logging_config import log_stage
-from app.config.settings import settings
 from app.models.schemas import (
     ArchiveCitation,
     GraphEdge,
@@ -304,6 +303,24 @@ class HybridRetrievalService:
     # Entity hint extraction
     # ------------------------------------------------------------------
 
+    _STOP_WORDS = {
+        "what", "who", "where", "when", "how", "why", "which",
+        "does", "did", "was", "were", "are", "is", "the", "and",
+        "for", "with", "from", "about", "into", "that", "this",
+        "have", "has", "had", "can", "could", "would", "should",
+        "tell", "describe", "explain", "me", "please",
+        "a", "an", "of", "in", "on", "to", "by",
+        "do", "be", "been", "being", "not", "no", "so",
+        "they", "them", "their", "its", "our", "your", "my",
+        "it", "he", "she", "we", "you", "his", "her",
+        "also", "but", "or", "if", "then", "than", "very",
+        "just", "more", "some", "any", "all", "each", "every",
+        "much", "many", "most", "other", "only", "same",
+        "there", "here", "will", "shall", "may", "might",
+        "know", "think", "want", "need", "like", "make",
+        "role", "work", "part", "thing", "time", "year",
+    }
+
     @staticmethod
     def _extract_entity_hints(question: str) -> list[str]:
         """Extract likely entity names from the question.
@@ -311,15 +328,18 @@ class HybridRetrievalService:
         Uses simple heuristics — capitalized multi-word phrases, proper
         nouns, and title-cased versions of multi-word sequences.
         No LLM call to keep latency low.
+
+        Strategy:
+        1. Title-case the query so lowercase queries still produce hints
+        2. Apply multi-word and single-word capitalized regex patterns
+        3. Filter out stop words after extraction
+        4. Fallback: if regex yields nothing, extract any word with 4+
+           characters that is not a common English stop word
         """
-        stop_words = {
-            "what", "who", "where", "when", "how", "why", "which",
-            "does", "did", "was", "were", "are", "is", "the", "and",
-            "for", "with", "from", "about", "into", "that", "this",
-            "have", "has", "had", "can", "could", "would", "should",
-            "tell", "describe", "explain", "me", "please",
-            "a", "an", "of", "in", "on", "to", "by",
-        }
+        stop_words = HybridRetrievalService._STOP_WORDS
+
+        # Title-case the query so lowercase inputs produce capitalized words
+        title_q = question.title()
 
         # Find sequences of capitalized words (2+ words = likely entity)
         pattern = r"\b(?:[A-Z][a-z.]+(?:\s+[A-Z][a-z.]+)+)\b"
@@ -328,7 +348,6 @@ class HybridRetrievalService:
         multi_word = re.findall(pattern, question)
 
         # Also try on title-cased text to catch lowercase queries
-        title_q = question.title()
         title_multi = re.findall(pattern, title_q)
 
         # Merge, filtering out stop-word-only matches
@@ -357,6 +376,15 @@ class HybridRetrievalService:
             if not any(word.lower() in mw.lower() for mw in all_multi):
                 hints.append(word)
 
+        # Fallback: if no hints found, extract any word with 4+ characters
+        # that is not a stop word (simple keyword approach)
+        if not hints:
+            words = re.findall(r"\b([a-zA-Z]{4,})\b", question)
+            for w in words:
+                titled = w.title()
+                if w.lower() not in stop_words and titled not in hints:
+                    hints.append(titled)
+
         return hints
 
     # ------------------------------------------------------------------
@@ -376,6 +404,7 @@ class HybridRetrievalService:
         ``context_chunks`` (list of context dicts for LLM).
         """
         if not entity_hints:
+            logger.debug("No entity hints extracted from query")
             return {"payload": None, "context_chunks": []}
 
         # --- Phase 1: Search all entity hints in parallel ---
@@ -386,10 +415,13 @@ class HybridRetrievalService:
 
         # Collect seeds for subgraph fetches
         seeds: list[GraphNode] = []
-        for result in search_results:
+        for hint, result in zip(entity_hints, search_results):
             if isinstance(result, BaseException) or not result:
+                logger.debug("No Neo4j match for hint '%s'", hint)
                 continue
             seeds.append(result[0])
+
+        logger.info("Graph search: %d seeds from %d hints", len(seeds), len(entity_hints))
 
         if not seeds:
             return {"payload": None, "context_chunks": []}

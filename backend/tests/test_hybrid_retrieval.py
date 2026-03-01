@@ -150,17 +150,33 @@ class TestGraphSearchParallel:
 class TestExtractEntityHints:
     """Verify entity hint extraction handles various casing."""
 
+    def test_capitalized_query_extracts_hints(self, service):
+        """Capitalized multi-word entity names should be extracted."""
+        hints = service._extract_entity_hints("Who is Thomas Raffles?")
+        assert any("Thomas Raffles" in h for h in hints)
+
     def test_lowercase_query_extracts_hints(self, service):
-        """Lowercase queries should still produce entity hints."""
-        hints = service._extract_entity_hints("explain strait settlement")
+        """Lowercase queries should still produce entity hints via title-casing."""
+        hints = service._extract_entity_hints(
+            "tell me about the resident of singapore"
+        )
         assert len(hints) > 0
         combined = " ".join(hints).lower()
-        assert "strait" in combined
+        assert "resident" in combined or "singapore" in combined
 
     def test_mixed_case_query(self, service):
-        """Mixed case queries should extract entities."""
-        hints = service._extract_entity_hints("tell me about the straits Settlements")
-        assert len(hints) > 0
+        """Mixed case queries should extract both original and title-cased hints."""
+        hints = service._extract_entity_hints(
+            "What did Raffles do in singapore?"
+        )
+        hint_words = " ".join(hints).lower()
+        assert "raffles" in hint_words
+        assert "singapore" in hint_words
+
+    def test_empty_query_returns_empty(self, service):
+        """Empty query string should return no hints."""
+        hints = service._extract_entity_hints("")
+        assert hints == []
 
     def test_stop_words_excluded(self, service):
         """Common stop words should not appear as hints."""

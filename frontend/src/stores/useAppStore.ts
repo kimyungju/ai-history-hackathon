@@ -79,7 +79,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       set({
         messages: [...get().messages, assistantMsg],
-        graphData: response.graph ?? get().graphData,
+        graphData: response.graph ?? null,
         isQuerying: false,
       });
     } catch (err) {

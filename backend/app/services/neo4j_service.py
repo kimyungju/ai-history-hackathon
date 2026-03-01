@@ -276,10 +276,18 @@ class Neo4jService:
         limit: int = 20,
         categories: list[str] | None = None,
     ) -> list[GraphNode]:
-        """Search entities by name or alias using CONTAINS."""
+        """Search entities by name or alias.
+
+        Uses a two-step strategy:
+        1. Exact CONTAINS substring match (original behaviour).
+        2. If no results, fall back to word-split search — each word in the
+           query is matched individually, and results are ranked by the number
+           of matching words (more matches = higher rank).
+        """
         search_term = query_text.lower()
 
-        cypher = """
+        # --- Step 1: exact CONTAINS (original approach) ---
+        exact_cypher = """
         MATCH (e:Entity)
         WHERE toLower(e.name) CONTAINS $search_term
            OR any(alias IN coalesce(e.aliases, [])
@@ -288,11 +296,39 @@ class Neo4jService:
         ORDER BY e.evidence_confidence DESC
         LIMIT $limit
         """
-        params = {"search_term": search_term, "limit": limit}
+        exact_params = {"search_term": search_term, "limit": limit}
 
         async with self.driver.session() as session:
-            result = await session.run(cypher, params)
+            result = await session.run(exact_cypher, exact_params)
             records = [r async for r in result]
+
+        method = "exact"
+
+        # --- Step 2: word-split fallback ---
+        if not records:
+            words = [w for w in search_term.split() if len(w) >= 2]
+            if words:
+                word_cypher = """
+                MATCH (e:Entity)
+                WHERE any(word IN $words WHERE toLower(e.name) CONTAINS word)
+                   OR any(word IN $words WHERE any(alias IN coalesce(e.aliases, [])
+                          WHERE toLower(alias) CONTAINS word))
+                WITH e,
+                     size([word IN $words WHERE toLower(e.name) CONTAINS word]) AS name_matches,
+                     size([word IN $words WHERE any(alias IN coalesce(e.aliases, [])
+                           WHERE toLower(alias) CONTAINS word)]) AS alias_matches
+                WITH e, name_matches + alias_matches AS match_count
+                ORDER BY match_count DESC, e.evidence_confidence DESC
+                LIMIT $limit
+                RETURN e
+                """
+                word_params = {"words": words, "limit": limit}
+
+                async with self.driver.session() as session:
+                    result = await session.run(word_cypher, word_params)
+                    records = [r async for r in result]
+
+                method = "word_split"
 
         nodes: list[GraphNode] = []
         for rec in records:
@@ -301,8 +337,11 @@ class Neo4jService:
                 continue
             nodes.append(node)
 
-        logger.info(
-            "Entity search for '%s' returned %d results", query_text, len(nodes)
+        logger.debug(
+            "Entity search for '%s': %d results (method=%s)",
+            query_text,
+            len(nodes),
+            method,
         )
         return nodes
 

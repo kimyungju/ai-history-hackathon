@@ -23,7 +23,8 @@ Rules:
 1. Answer ONLY using information from the archive context above.
 2. Cite every fact using [archive:N] markers.
 3. Colonial archives may contain OCR artifacts, financial tables, or fragmented text — extract meaning where possible.
-4. If the context genuinely does not contain information to answer the question, respond exactly: "I cannot answer this based on the available sources."
+4. If the context genuinely does not contain information to answer the question, \
+respond exactly: "I cannot answer this based on the available sources."
 5. NEVER infer, guess, or use external knowledge.
 
 User question: {question}"""
