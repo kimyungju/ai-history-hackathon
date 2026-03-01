@@ -93,6 +93,42 @@ async def document_page_text(doc_id: str, page: int) -> dict:
     )
 
 
+@router.get("/document/{doc_id:path}/text")
+async def document_full_text(
+    doc_id: str,
+    page_start: int | None = None,
+    page_end: int | None = None,
+):
+    """Retrieve OCR text for all pages or a page range of a document.
+
+    - No query params: returns all pages
+    - page_start + page_end: returns pages in that range (inclusive)
+    - page_start only: returns from that page to the end
+    """
+    blob_path = f"ocr/{doc_id}_ocr.json"
+    try:
+        blob = storage_service._bucket.blob(blob_path)
+        loop = asyncio.get_event_loop()
+        raw = await loop.run_in_executor(None, blob.download_as_text)
+        all_pages = json.loads(raw)
+    except Exception:
+        raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
+
+    # Filter by page range if specified
+    if page_start is not None:
+        end = page_end if page_end is not None else max(p["page_number"] for p in all_pages)
+        pages = [p for p in all_pages if page_start <= p["page_number"] <= end]
+        pages.sort(key=lambda p: p["page_number"])
+    else:
+        pages = sorted(all_pages, key=lambda p: p["page_number"])
+
+    return {
+        "doc_id": doc_id,
+        "total_pages": len(all_pages),
+        "pages": pages,
+    }
+
+
 @router.get("/document/proxy/{doc_id:path}")
 async def document_proxy(doc_id: str) -> Response:
     """Stream a PDF from Cloud Storage through the backend.
