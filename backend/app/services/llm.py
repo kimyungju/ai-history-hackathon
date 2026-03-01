@@ -10,21 +10,35 @@ from app.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
-ANSWER_GENERATION_PROMPT = """Context retrieved from archives and/or web:
+ANSWER_GENERATION_PROMPT = """You are a research assistant for colonial-era Straits Settlements archives.
+
+Context retrieved from colonial archive documents:
 \"\"\"
 {context}
 \"\"\"
 
 Sources: {citations}
-Source type: {source_type}
 
 Rules:
-1. Answer ONLY using information from the context above.
-2. Cite every fact using [archive:N] or [web:N].
-3. If the context does not contain enough information to answer:
-   respond exactly: "I cannot answer this based on the available sources."
-4. NEVER infer, guess, or use external knowledge.
-5. DO NOT merge facts from different sources without citing each.
+1. Answer ONLY using information from the archive context above.
+2. Cite every fact using [archive:N] markers.
+3. Colonial archives may contain OCR artifacts, financial tables, or fragmented text — extract meaning where possible.
+4. If the context genuinely does not contain information to answer the question, respond exactly: "I cannot answer this based on the available sources."
+5. NEVER infer, guess, or use external knowledge.
+
+User question: {question}"""
+
+WEB_FALLBACK_PROMPT = """Context from web sources:
+\"\"\"
+{context}
+\"\"\"
+
+Sources: {citations}
+
+Rules:
+1. Answer using information from the web context above.
+2. Cite every fact using [web:N] markers.
+3. Be concise and factual.
 
 User question: {question}"""
 
@@ -57,6 +71,7 @@ class LlmService:
         question: str,
         context_chunks: list[dict],
         source_type: str = "archive",
+        prompt_template: str | None = None,
     ) -> dict:
         """Generate a grounded answer from retrieved context chunks.
 
@@ -88,7 +103,8 @@ class LlmService:
         context_str = "\n\n".join(context_parts)
         citations_str = "; ".join(citation_refs)
 
-        prompt = ANSWER_GENERATION_PROMPT.format(
+        template = prompt_template if prompt_template is not None else ANSWER_GENERATION_PROMPT
+        prompt = template.format(
             context=context_str,
             citations=citations_str,
             source_type=source_type,

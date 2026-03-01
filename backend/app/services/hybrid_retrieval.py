@@ -112,9 +112,10 @@ class HybridRetrievalService:
         # Step 6 — Compute combined relevance score.
         vector_score = 0.0
         if vector_results:
-            vector_score = sum(r["distance"] for r in vector_results) / len(
+            avg_distance = sum(r["distance"] for r in vector_results) / len(
                 vector_results
             )
+            vector_score = max(1.0 - avg_distance, 0.0)
 
         graph_hit_ratio = 0.0
         if entity_hints and graph_context:
@@ -133,37 +134,41 @@ class HybridRetrievalService:
             relevance_score,
         )
 
-        # Phase 4: Web fallback when relevance is below threshold.
-        web_context: list[dict] = []
-        source_type = "archive"
-
-        if relevance_score < settings.RELEVANCE_THRESHOLD:
-            logger.info(
-                "Relevance %.4f below threshold %.2f — triggering web fallback",
-                relevance_score,
-                settings.RELEVANCE_THRESHOLD,
-            )
-            try:
-                web_context = await web_search_service.search(question)
-                if web_context:
-                    merged_context.extend(web_context)
-                    source_type = "mixed" if merged_context else "web_fallback"
-                    logger.info("Added %d web results to context", len(web_context))
-            except Exception:
-                logger.exception("Web fallback failed; continuing with archive only")
-
-        # If we only had web results (no archive at all), mark as web_fallback.
-        if not vector_results and not graph_context and web_context:
-            source_type = "web_fallback"
-
-        # Step 7 — Generate answer via LLM.
+        # Step 7 — Generate archive-only answer via LLM.
         with log_stage("llm_generation", logger=logger):
             llm_result: dict = await llm_service.generate_answer(
-                question, merged_context, source_type
+                question, merged_context, source_type="archive"
             )
         answer_text: str = llm_result["answer"]
 
-        # Step 8 — Build citation list (archive + web).
+        # Step 8 — If archive couldn't answer, try web fallback.
+        web_context: list[dict] = []
+        source_type = "archive"
+
+        if answer_text.strip() == FALLBACK_ANSWER and merged_context:
+            logger.info("Archive could not answer; triggering web fallback")
+            try:
+                web_context = await web_search_service.search(question)
+                if web_context:
+                    from app.services.llm import WEB_FALLBACK_PROMPT
+
+                    web_llm_result = await llm_service.generate_answer(
+                        question, web_context, source_type="web_fallback",
+                        prompt_template=WEB_FALLBACK_PROMPT,
+                    )
+                    web_answer = web_llm_result["answer"]
+                    disclaimer = (
+                        "The requested information was not found in the colonial "
+                        "archive documents. Below is an answer based on web sources:\n\n"
+                    )
+                    answer_text = disclaimer + web_answer
+                    source_type = "web_fallback"
+                    merged_context = web_context
+                    logger.info("Web fallback answer generated")
+            except Exception:
+                logger.exception("Web fallback failed")
+
+        # Step 9 — Build citation list (archive + web).
         citations: list[ArchiveCitation | WebCitation] = []
         archive_idx = 0
         web_idx = 0
@@ -194,7 +199,7 @@ class HybridRetrievalService:
                     )
                 )
 
-        # Step 9 — Build graph payload.
+        # Step 10 — Build graph payload.
         graph_payload = graph_result.get("payload")
 
         return QueryResponse(
