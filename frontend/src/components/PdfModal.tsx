@@ -4,7 +4,6 @@ import * as pdfjsLib from "pdfjs-dist";
 import pdfjsWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import { useAppStore } from "../stores/useAppStore";
 import { apiClient, API_BASE } from "../api/client";
-import { pdfCache } from "../utils/pdfCache";
 
 // Configure pdf.js worker from local node_modules (CDN doesn't have this version)
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
@@ -25,40 +24,25 @@ export default function PdfModal() {
   const [pageText, setPageText] = useState<string | null>(null);
   const [textLoading, setTextLoading] = useState(false);
 
-  // Fetch signed URL and load PDF (cache by docId)
+  // Fetch signed URL and load PDF
   useEffect(() => {
     if (!isPdfModalOpen || !pdfModalProps) return;
 
-    const { docId, page } = pdfModalProps;
     let cancelled = false;
-
-    // Cache hit — reuse the already-loaded document
-    const cached = pdfCache.get(docId);
-    if (cached) {
-      setPdfDoc(cached);
-      setTotalPages(cached.numPages);
-      setCurrentPage(Math.min(page, cached.numPages));
-      setError(null);
-      setLoading(false);
-      return;
-    }
-
-    // Cache miss — fetch signed URL and load
     setLoading(true);
     setError(null);
     setPdfDoc(null);
 
     (async () => {
       try {
-        const { url } = await apiClient.getSignedUrl(docId, page);
+        const { url } = await apiClient.getSignedUrl(pdfModalProps.docId, pdfModalProps.page);
         const pdfUrl = url.startsWith("/document/") ? `${API_BASE}${url}` : url;
         const doc = await pdfjsLib.getDocument(pdfUrl).promise;
         if (cancelled) return;
 
-        pdfCache.set(docId, doc);
         setPdfDoc(doc);
         setTotalPages(doc.numPages);
-        setCurrentPage(Math.min(page, doc.numPages));
+        setCurrentPage(Math.min(pdfModalProps.page, doc.numPages));
       } catch (err) {
         if (cancelled) return;
         setError(err instanceof Error ? err.message : "Failed to load PDF");

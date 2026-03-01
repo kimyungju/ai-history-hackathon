@@ -22,7 +22,19 @@ credentials*.json
 *.swp
 
 # Claude Code
-.claude/worktrees/
+.claude/
 
 # Build artifacts
 frontend/dist/
+
+# Dev plans and docs (internal only)
+dev/
+docs/
+
+# Scratch/debug files
+NUL
+*.txt
+!requirements.txt
+
+# OS
+Thumbs.db
