@@ -47,4 +47,22 @@ export const apiClient = {
       method: "GET",
     });
   },
+
+  listDocuments(): Promise<{ documents: string[] }> {
+    return request<{ documents: string[] }>(`${BASE}/admin/documents`, {
+      method: "GET",
+    });
+  },
+
+  getOcrQuality(docId: string): Promise<{
+    doc_id: string;
+    total_pages: number;
+    avg_confidence: number;
+    flagged_pages: { page: number; confidence: number }[];
+    flagged_count: number;
+  }> {
+    return request(`${BASE}/admin/documents/${encodeURIComponent(docId)}/ocr`, {
+      method: "GET",
+    });
+  },
 };

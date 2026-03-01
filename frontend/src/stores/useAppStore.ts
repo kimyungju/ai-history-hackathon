@@ -20,6 +20,7 @@ interface AppState {
   isPdfModalOpen: boolean;
   pdfModalProps: { docId: string; page: number } | null;
   mobileTab: "graph" | "chat";
+  isAdminOpen: boolean;
 
   // Actions
   sendQuery: (question: string) => Promise<void>;
@@ -31,6 +32,7 @@ interface AppState {
   setChatInput: (text: string) => void;
   setGraphData: (data: GraphPayload | null) => void;
   setMobileTab: (tab: "graph" | "chat") => void;
+  toggleAdmin: () => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -47,6 +49,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   isPdfModalOpen: false,
   pdfModalProps: null,
   mobileTab: "chat",
+  isAdminOpen: false,
 
   // Actions
   async sendQuery(question: string) {
@@ -126,6 +129,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setMobileTab(tab: "graph" | "chat") {
     set({ mobileTab: tab });
+  },
+
+  toggleAdmin() {
+    set((s) => ({ isAdminOpen: !s.isAdminOpen }));
   },
 }));
 

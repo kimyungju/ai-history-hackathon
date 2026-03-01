@@ -6,11 +6,13 @@ import GraphCanvas from "./components/GraphCanvas";
 import GraphSearchBar from "./components/GraphSearchBar";
 import NodeSidebar from "./components/NodeSidebar";
 import PdfModal from "./components/PdfModal";
+import AdminPanel from "./components/AdminPanel";
 
 export default function App() {
   const splitRatio = useAppStore((s) => s.splitRatio);
   const mobileTab = useAppStore((s) => s.mobileTab);
   const setMobileTab = useAppStore((s) => s.setMobileTab);
+  const toggleAdmin = useAppStore((s) => s.toggleAdmin);
   const isMobile = useIsMobile();
 
   if (isMobile) {
@@ -47,6 +49,12 @@ export default function App() {
               <GraphSearchBar />
               <GraphCanvas />
               <NodeSidebar />
+              <button
+                onClick={toggleAdmin}
+                className="absolute top-2 right-2 z-10 text-gray-500 hover:text-gray-300 text-xs px-2 py-1 rounded bg-gray-800/80"
+              >
+                Admin
+              </button>
             </div>
           ) : (
             <ChatPanel />
@@ -54,6 +62,7 @@ export default function App() {
         </div>
 
         <PdfModal />
+        <AdminPanel />
       </div>
     );
   }
@@ -71,6 +80,12 @@ export default function App() {
           <GraphSearchBar />
           <GraphCanvas />
           <NodeSidebar />
+          <button
+            onClick={toggleAdmin}
+            className="absolute top-2 right-2 z-10 text-gray-500 hover:text-gray-300 text-xs px-2 py-1 rounded bg-gray-800/80"
+          >
+            Admin
+          </button>
         </div>
 
         <ResizableSplitter />
@@ -79,6 +94,7 @@ export default function App() {
       </div>
 
       <PdfModal />
+      <AdminPanel />
     </div>
   );
 }
