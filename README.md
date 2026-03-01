@@ -86,7 +86,7 @@ We started by broadly classifying all ingested documents into five thematic cate
 | Category | Theme Mapping | Data Share |
 |---|---|---|
 | **Economic and Financial** | Commodities and Capitalism | ~70% |
-| **General and Establishment** | Colonialism, Race and Politics | ~30% (combined) |
+| **General and Establishment** | Colonialism, Race and Politics | ~30% (combined across 4 themes) |
 | **Social Services** | Gender and Sexuality | |
 | **Internal Relations and Research** | Popular Culture | |
 | **Defence and Military** | Ecology and Other Animals | |
