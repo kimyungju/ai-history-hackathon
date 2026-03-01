@@ -217,16 +217,6 @@ class HybridRetrievalService:
     # Full-text page request detection
     # ------------------------------------------------------------------
 
-    # Matches document IDs like: CO 273:579:1, CO273:579:2a, CO 273:534:6
-    _DOC_ID_RE = re.compile(
-        r"CO\s*273\s*[:.]?\s*(\d+)\s*[:.]?\s*(\d+\w*)",
-        re.IGNORECASE,
-    )
-    # Matches page references like: p.85, p85, page 85, p 85
-    _PAGE_RE = re.compile(
-        r"(?:p\.?\s*|page\s+)(\d+)",
-        re.IGNORECASE,
-    )
     # Trigger phrases that indicate a full-text request
     _FULL_TEXT_TRIGGERS = re.compile(
         r"(?:full\s+text|show\s+(?:the\s+)?text|give\s+(?:me\s+)?(?:the\s+)?(?:full\s+)?text|"
@@ -234,61 +224,111 @@ class HybridRetrievalService:
         re.IGNORECASE,
     )
 
+    # Maximum pages to include in a single chat response
+    _MAX_CHAT_PAGES = 20
+
     async def _try_full_text_request(self, question: str) -> QueryResponse | None:
-        """Detect 'give me the full text of CO 273:X:Y page N' and return OCR directly.
+        """Detect document retrieval requests and return OCR text directly.
 
-        Returns a QueryResponse if the question is a full-text request, or None
-        to fall through to the normal hybrid retrieval pipeline.
+        Bypasses RAG when:
+        - A trigger phrase ("full text", "show text", etc.) AND a doc ref are found
+        - A doc ref AND an explicit page spec are found (no trigger needed)
+
+        Supports: single page, page range, and all pages.
         """
-        if not self._FULL_TEXT_TRIGGERS.search(question):
+        from app.services.document_reference import parse_document_reference
+
+        ref = parse_document_reference(question)
+        if ref is None:
             return None
 
-        doc_match = self._DOC_ID_RE.search(question)
-        if not doc_match:
+        # Require either a trigger phrase or explicit page spec
+        has_trigger = self._FULL_TEXT_TRIGGERS.search(question)
+        has_pages = ref.pages is not None
+        if not has_trigger and not has_pages:
             return None
 
-        volume = doc_match.group(1)
-        part = doc_match.group(2)
-        doc_id = f"CO 273:{volume}:{part}"
+        doc_id = ref.doc_id
+        logger.info("Full-text request detected: doc_id=%s, pages=%s", doc_id, ref.pages)
 
-        page_match = self._PAGE_RE.search(question)
-        page_num = int(page_match.group(1)) if page_match else 1
-
-        logger.info("Full-text request detected: doc_id=%s, page=%d", doc_id, page_num)
-
-        # Fetch OCR text from GCS
+        # Fetch OCR data from GCS
         blob_path = f"ocr/{doc_id}_ocr.json"
         try:
             blob = storage_service._bucket.blob(blob_path)
             loop = asyncio.get_event_loop()
             raw = await loop.run_in_executor(None, blob.download_as_text)
-            pages = json.loads(raw)
+            all_pages = json.loads(raw)
         except Exception:
             logger.warning("OCR data not found for %s", doc_id)
-            return None  # Fall through to normal pipeline
-
-        # Find the requested page
-        page_text = None
-        total_pages = len(pages)
-        for p in pages:
-            if p["page_number"] == page_num:
-                page_text = p["text"]
-                break
-
-        if page_text is None:
             return QueryResponse(
-                answer=f"Page {page_num} not found in {doc_id} (document has {total_pages} pages).",
+                answer=f"Document {doc_id} was not found in the archive collection. "
+                       f"Please check the volume and file numbers.",
                 source_type="archive",
                 citations=[],
                 graph=None,
             )
 
-        answer = f"**Full OCR text of {doc_id}, page {page_num}:**\n\n{page_text}"
+        total_pages = len(all_pages)
+
+        if ref.pages is not None:
+            # Single page or page range
+            start, end = ref.pages
+            selected = [p for p in all_pages if start <= p["page_number"] <= end]
+            selected.sort(key=lambda p: p["page_number"])
+
+            if not selected:
+                if start == end:
+                    return QueryResponse(
+                        answer=f"Page {start} not found in {doc_id} (document has {total_pages} pages).",
+                        source_type="archive",
+                        citations=[],
+                        graph=None,
+                    )
+                return QueryResponse(
+                    answer=f"Pages {start}-{end} not found in {doc_id} (document has {total_pages} pages).",
+                    source_type="archive",
+                    citations=[],
+                    graph=None,
+                )
+        else:
+            # All pages
+            selected = sorted(all_pages, key=lambda p: p["page_number"])
+
+        # Pagination for very large documents
+        truncated = False
+        if len(selected) > self._MAX_CHAT_PAGES:
+            selected = selected[: self._MAX_CHAT_PAGES]
+            truncated = True
+
+        # Build answer
+        page_numbers = [p["page_number"] for p in selected]
+        if len(selected) == 1:
+            p = selected[0]
+            header = f"**Full OCR text of {doc_id}, page {p['page_number']}:**"
+            answer = f"{header}\n\n{p['text']}"
+        else:
+            if ref.pages is None:
+                header = f"**Full OCR text of {doc_id}** ({total_pages} pages)"
+            else:
+                header = f"**OCR text of {doc_id}, pages {ref.pages[0]}-{ref.pages[1]}:**"
+            parts = [header]
+            for p in selected:
+                parts.append(f"\n---\n**Page {p['page_number']}:**\n\n{p['text']}")
+            answer = "\n".join(parts)
+
+        if truncated:
+            answer += (
+                f"\n\n---\n*Showing pages {page_numbers[0]}-{page_numbers[-1]} "
+                f"of {total_pages}. Ask for a specific page range to see more.*"
+            )
+
+        # Build citation
+        span_text = selected[0]["text"][:300] if selected else ""
         citation = ArchiveCitation(
             id=1,
             doc_id=doc_id,
-            pages=[page_num],
-            text_span=page_text[:300] if len(page_text) > 300 else page_text,
+            pages=page_numbers,
+            text_span=span_text,
             confidence=1.0,
         )
 
