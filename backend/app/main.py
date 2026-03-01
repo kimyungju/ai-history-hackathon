@@ -6,7 +6,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.config.logging_config import setup_logging
 from app.config.settings import settings
+from app.middleware.trace import TraceMiddleware
 from app.routers import ingest, query, graph
 from app.services.neo4j_service import neo4j_service
 
@@ -15,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    setup_logging()
     vertexai.init(
         project=settings.GCP_PROJECT_ID,
         location=settings.GCP_REGION,
@@ -43,6 +46,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.add_middleware(TraceMiddleware)
 
 
 app.include_router(ingest.router)
