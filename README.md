@@ -287,21 +287,3 @@ frontend/
 infra/
 └── docker-compose.yml
 ```
-
-## Documentation
-
-Detailed design documents and implementation plans are available in `docs/plans/`:
-
-| Document | Description |
-|----------|-------------|
-| [`colonial-archives-graph-rag-design.md`](docs/plans/2026-03-01-colonial-archives-graph-rag-design.md) | Overall system architecture and design decisions |
-| [`phase1-backend-foundation.md`](docs/plans/2026-03-01-phase1-backend-foundation.md) | Backend foundation: OCR, chunking, embeddings, vector search |
-| [`data-ingestion-and-integration.md`](docs/plans/2026-03-01-data-ingestion-and-integration.md) | End-to-end ingestion pipeline with Neo4j integration |
-| [`phase3-implementation-plan.md`](docs/plans/2026-03-01-phase3-implementation-plan.md) | React frontend: graph visualization, chat, PDF viewer |
-| [`phase4-web-augmentation.md`](docs/plans/2026-03-01-phase4-web-augmentation.md) | Web fallback, auto-classification, category filtering |
-| [`archive-first-query.md`](docs/plans/2026-03-01-archive-first-query.md) | Archive-first query pipeline with web fallback disclaimer |
-| [`graph-visualization-overhaul.md`](docs/plans/2026-03-02-graph-visualization-overhaul.md) | Two-state graph: overview (fcose-clustered) + query-filtered |
-| [`full-document-retrieval.md`](docs/plans/2026-03-02-full-document-retrieval.md) | Multi-page document retrieval by reference |
-| [`future-roadmap.md`](docs/plans/future-roadmap.md) | Future enhancements and scaling plans |
-
-Multi-phase team execution contexts are available in `dev/active/` with per-phase plan, task breakdown, and architecture context documents.
