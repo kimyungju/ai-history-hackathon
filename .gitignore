@@ -23,6 +23,7 @@ credentials*.json
 
 # Claude Code
 .claude/
+CLAUDE.md
 
 # Build artifacts
 frontend/dist/
