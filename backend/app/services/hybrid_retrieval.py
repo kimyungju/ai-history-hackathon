@@ -57,6 +57,11 @@ class HybridRetrievalService:
     ) -> QueryResponse:
         """Run the full hybrid-retrieval pipeline and return a QueryResponse."""
 
+        # Step 0 — Check for full-text page requests (bypass LLM entirely).
+        full_text_result = await self._try_full_text_request(question)
+        if full_text_result is not None:
+            return full_text_result
+
         # Step 1 — Embed the question.
         with log_stage("query_embed", logger=logger):
             query_embedding: list[float] = await embeddings_service.embed_query(question)
@@ -207,6 +212,92 @@ class HybridRetrievalService:
             source_type=source_type,
             citations=citations,
             graph=graph_payload,
+        )
+
+    # ------------------------------------------------------------------
+    # Full-text page request detection
+    # ------------------------------------------------------------------
+
+    # Matches document IDs like: CO 273:579:1, CO273:579:2a, CO 273:534:6
+    _DOC_ID_RE = re.compile(
+        r"CO\s*273\s*[:.]?\s*(\d+)\s*[:.]?\s*(\d+\w*)",
+        re.IGNORECASE,
+    )
+    # Matches page references like: p.85, p85, page 85, p 85
+    _PAGE_RE = re.compile(
+        r"(?:p\.?\s*|page\s+)(\d+)",
+        re.IGNORECASE,
+    )
+    # Trigger phrases that indicate a full-text request
+    _FULL_TEXT_TRIGGERS = re.compile(
+        r"(?:full\s+text|show\s+(?:the\s+)?text|give\s+(?:me\s+)?(?:the\s+)?(?:full\s+)?text|"
+        r"ocr\s+text|raw\s+text|exact\s+text|original\s+text|page\s+text|transcript)",
+        re.IGNORECASE,
+    )
+
+    async def _try_full_text_request(self, question: str) -> QueryResponse | None:
+        """Detect 'give me the full text of CO 273:X:Y page N' and return OCR directly.
+
+        Returns a QueryResponse if the question is a full-text request, or None
+        to fall through to the normal hybrid retrieval pipeline.
+        """
+        if not self._FULL_TEXT_TRIGGERS.search(question):
+            return None
+
+        doc_match = self._DOC_ID_RE.search(question)
+        if not doc_match:
+            return None
+
+        volume = doc_match.group(1)
+        part = doc_match.group(2)
+        doc_id = f"CO 273:{volume}:{part}"
+
+        page_match = self._PAGE_RE.search(question)
+        page_num = int(page_match.group(1)) if page_match else 1
+
+        logger.info("Full-text request detected: doc_id=%s, page=%d", doc_id, page_num)
+
+        # Fetch OCR text from GCS
+        blob_path = f"ocr/{doc_id}_ocr.json"
+        try:
+            blob = storage_service._bucket.blob(blob_path)
+            loop = asyncio.get_event_loop()
+            raw = await loop.run_in_executor(None, blob.download_as_text)
+            pages = json.loads(raw)
+        except Exception:
+            logger.warning("OCR data not found for %s", doc_id)
+            return None  # Fall through to normal pipeline
+
+        # Find the requested page
+        page_text = None
+        total_pages = len(pages)
+        for p in pages:
+            if p["page_number"] == page_num:
+                page_text = p["text"]
+                break
+
+        if page_text is None:
+            return QueryResponse(
+                answer=f"Page {page_num} not found in {doc_id} (document has {total_pages} pages).",
+                source_type="archive",
+                citations=[],
+                graph=None,
+            )
+
+        answer = f"**Full OCR text of {doc_id}, page {page_num}:**\n\n{page_text}"
+        citation = ArchiveCitation(
+            id=1,
+            doc_id=doc_id,
+            pages=[page_num],
+            text_span=page_text[:300] if len(page_text) > 300 else page_text,
+            confidence=1.0,
+        )
+
+        return QueryResponse(
+            answer=f"{answer} [archive:1]",
+            source_type="archive",
+            citations=[citation],
+            graph=None,
         )
 
     # ------------------------------------------------------------------
