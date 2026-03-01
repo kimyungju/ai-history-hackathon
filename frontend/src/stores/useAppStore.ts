@@ -19,6 +19,7 @@ interface AppState {
   isSidebarOpen: boolean;
   isPdfModalOpen: boolean;
   pdfModalProps: { docId: string; page: number } | null;
+  mobileTab: "graph" | "chat";
 
   // Actions
   sendQuery: (question: string) => Promise<void>;
@@ -29,6 +30,7 @@ interface AppState {
   setFilterCategories: (cats: string[]) => void;
   setChatInput: (text: string) => void;
   setGraphData: (data: GraphPayload | null) => void;
+  setMobileTab: (tab: "graph" | "chat") => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -44,6 +46,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   isSidebarOpen: false,
   isPdfModalOpen: false,
   pdfModalProps: null,
+  mobileTab: "chat",
 
   // Actions
   async sendQuery(question: string) {
@@ -119,6 +122,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setGraphData(data: GraphPayload | null) {
     set({ graphData: data });
+  },
+
+  setMobileTab(tab: "graph" | "chat") {
+    set({ mobileTab: tab });
   },
 }));
 
