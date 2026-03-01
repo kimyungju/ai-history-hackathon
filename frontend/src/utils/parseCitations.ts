@@ -5,11 +5,20 @@ export type CitationSegment = { type: "citation"; citation: Citation };
 export type ParsedSegment = TextSegment | CitationSegment;
 
 const CITATION_RE = /\[(archive|web):(\d+)\]/g;
+const GROUPED_CITATION_RE = /\[(archive|web):(\d+(?:\s*,\s*\d+)+)\]/g;
+
+/** Expand grouped citations like [archive:7, 11] → [archive:7][archive:11] */
+function expandGroupedCitations(text: string): string {
+  return text.replace(GROUPED_CITATION_RE, (_, type, nums) =>
+    nums.split(",").map((n: string) => `[${type}:${n.trim()}]`).join("")
+  );
+}
 
 export function parseCitations(
   text: string,
   citations: Citation[]
 ): ParsedSegment[] {
+  text = expandGroupedCitations(text);
   const citationMap = new Map<string, Citation>();
   for (const c of citations) {
     citationMap.set(`${c.type}:${c.id}`, c);

@@ -17,6 +17,22 @@ const citations: Citation[] = [
     title: "Wikipedia",
     url: "https://en.wikipedia.org/wiki/Straits",
   },
+  {
+    type: "archive",
+    id: 7,
+    doc_id: "CO 273:59:18",
+    pages: [1],
+    text_span: "Straits Settlements...",
+    confidence: 0.9,
+  },
+  {
+    type: "archive",
+    id: 11,
+    doc_id: "CO 273:59:22",
+    pages: [2],
+    text_span: "transferred from Indian Government...",
+    confidence: 0.88,
+  },
 ];
 
 describe("parseCitations", () => {
@@ -61,5 +77,29 @@ describe("parseCitations", () => {
     expect(result).toEqual([
       { type: "text", content: "Unknown [archive:99] ref." },
     ]);
+  });
+
+  it("expands grouped citations like [archive:7, 11]", () => {
+    const result = parseCitations(
+      "The Straits Settlements [archive:7, 11] were established.",
+      citations
+    );
+    expect(result).toEqual([
+      { type: "text", content: "The Straits Settlements " },
+      { type: "citation", citation: citations[2] },
+      { type: "citation", citation: citations[3] },
+      { type: "text", content: " were established." },
+    ]);
+  });
+
+  it("expands grouped citations with three or more ids", () => {
+    const result = parseCitations(
+      "Facts [archive:1, 7, 11].",
+      citations
+    );
+    expect(result).toHaveLength(5);
+    expect(result[1]).toEqual({ type: "citation", citation: citations[0] });
+    expect(result[2]).toEqual({ type: "citation", citation: citations[2] });
+    expect(result[3]).toEqual({ type: "citation", citation: citations[3] });
   });
 });
