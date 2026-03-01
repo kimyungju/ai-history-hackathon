@@ -352,7 +352,10 @@ class HybridRetrievalService:
         self,
         vector_results: list[dict],
     ) -> list[dict]:
-        """Load full chunk texts from GCS and merge with vector distances."""
+        """Load full chunk texts from GCS and merge with vector distances.
+
+        Downloads are parallelized via asyncio.gather + run_in_executor.
+        """
 
         distance_by_chunk: dict[str, float] = {
             r["id"]: r["distance"] for r in vector_results
@@ -364,25 +367,34 @@ class HybridRetrievalService:
             doc_id = parts[0] if len(parts) == 2 else chunk_id
             doc_chunks[doc_id].append(chunk_id)
 
-        chunk_lookup: dict[str, dict] = {}
-        for doc_id, chunk_ids in doc_chunks.items():
+        # --- Parallel GCS downloads ---
+        async def _download(doc_id: str) -> tuple[str, list[dict]]:
             blob_path = f"chunks/{doc_id}.json"
             try:
                 blob = storage_service._bucket.blob(blob_path)
-                raw_text = blob.download_as_text()
-                chunks_data = json.loads(raw_text)
-
-                for chunk in chunks_data:
-                    cid = chunk.get("chunk_id", "")
-                    if cid in distance_by_chunk:
-                        chunk_lookup[cid] = chunk
+                loop = asyncio.get_event_loop()
+                raw_text = await loop.run_in_executor(None, blob.download_as_text)
+                return doc_id, json.loads(raw_text)
             except Exception:
                 logger.warning(
                     "Failed to load chunk file from GCS: %s",
                     blob_path,
                     exc_info=True,
                 )
+                return doc_id, []
 
+        results = await asyncio.gather(*[
+            _download(doc_id) for doc_id in doc_chunks
+        ])
+
+        chunk_lookup: dict[str, dict] = {}
+        for _doc_id, chunks_data in results:
+            for chunk in chunks_data:
+                cid = chunk.get("chunk_id", "")
+                if cid in distance_by_chunk:
+                    chunk_lookup[cid] = chunk
+
+        # --- Build context list ---
         context_chunks: list[dict] = []
         for chunk_id, distance in distance_by_chunk.items():
             stored = chunk_lookup.get(chunk_id, {})
